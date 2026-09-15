@@ -25,6 +25,8 @@ inline struct SimulationConfig
 
     int enable_elastic_band;
     int band_attached_link = 0;
+    double elastic_band_point_z = 3.0;  // anchor height (m); lower this if the robot hangs too high
+    double elastic_band_length = 0.0;   // rest length (m); raise this to hang the robot lower
 
     void load_from_yaml(const std::string &filename)
     {
@@ -41,6 +43,12 @@ inline struct SimulationConfig
             joystick_bits = cfg["joystick_bits"].as<int>();
             print_scene_information = cfg["print_scene_information"].as<int>();
             enable_elastic_band = cfg["enable_elastic_band"].as<int>();
+            if (cfg["elastic_band_point_z"]) {
+                elastic_band_point_z = cfg["elastic_band_point_z"].as<double>();
+            }
+            if (cfg["elastic_band_length"]) {
+                elastic_band_length = cfg["elastic_band_length"].as<double>();
+            }
         }
         catch(const std::exception& e)
         {
