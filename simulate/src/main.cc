@@ -628,6 +628,8 @@ void user_key_cb(GLFWwindow* window, int key, int scancode, int act, int mods) {
     if(param::config.enable_elastic_band == 1) {
       if (key==GLFW_KEY_9) {
         elastic_band.enable_ = !elastic_band.enable_;
+      } else if (key==GLFW_KEY_E) {
+        elastic_band.enable_ = false; // release
       } else if (key==GLFW_KEY_7 || key==GLFW_KEY_UP) {
         elastic_band.length_ -= 0.1;
       } else if (key==GLFW_KEY_8 || key==GLFW_KEY_DOWN) {
@@ -685,6 +687,10 @@ int main(int argc, char **argv)
   auto sim = std::make_unique<mj::Simulate>(
     std::make_unique<mj::GlfwAdapter>(),
     &cam, &opt, &pert, /* is_passive = */ false);
+
+  // Window already exists at this point (created in GlfwAdapter's
+  // constructor), so it's safe for the bridge thread to read it immediately.
+  g_glfw_window = static_cast<mj::GlfwAdapter*>(sim->platform_ui.get())->window_;
 
   std::thread unitree_thread(UnitreeSdk2BridgeThread, nullptr);
 

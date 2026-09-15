@@ -14,9 +14,9 @@ robot_scene: "src/assets/robots/unitree_r1/xmls/scene_r1.xml"
 domain_id: 0  # Domain id
 interface: "lo" # Interface
 
-use_joystick: 0 # Simulate Unitree WirelessController using a gamepad
-joystick_type: "xbox" # support "xbox" and "switch" gamepad layout
-joystick_device: "/dev/input/js0" # Device path
+use_joystick: 1 # Simulate Unitree WirelessController using a gamepad
+joystick_type: "keyboard" # "xbox", "switch", or "keyboard" (no gamepad needed; reads the MuJoCo viewer window)
+joystick_device: "/dev/input/js0" # Device path (ignored for joystick_type: keyboard)
 joystick_bits: 16 # Some game controllers may only have 8-bit accuracy
 
 print_scene_information: 1 # Print link, joint and sensors information of robot
