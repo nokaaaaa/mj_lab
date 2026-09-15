@@ -1,0 +1,71 @@
+# R1 motion-imitation policy, trained with Unitree-R1-Tracking-No-State-Estimation.
+#
+# Arrays below are in the POLICY's joint order (the MJCF/mjlab order), which is
+# NOT the SDK slot order. joint_ids_map translates: policy joint i is written to
+# SDK motor slot joint_ids_map[i] (deploy/robots/r1/src/State_RLBase.cpp:31).
+#
+# Note entries 12 and 13: the MJCF nests waist_roll above waist_yaw, so the
+# policy emits roll at 12 and yaw at 13, while the R1 SDK has WAIST_YAW at slot
+# 12 and WAIST_ROLL at slot 13 (R1 Developer Guide). Hence 13,12 and not 12,13.
+joint_ids_map: [0,1,2,3,4,5,6,7,8,9,10,11,13,12,15,16,17,18,19,22,23,24,25,26]
+step_dt: 0.02
+
+# Actuator gains, matching R1_ACTUATOR_* in src/assets/robots/unitree_r1/r1_constants.py
+stiffness: [100, 100, 100, 100, 40, 40,  100, 100, 100, 100, 40, 40,  100, 100,
+            40, 40, 20, 20, 20,  40, 40, 20, 20, 20]
+damping:   [2, 2, 2, 2, 2, 2,  2, 2, 2, 2, 2, 2,  2, 2,
+            2, 2, 1, 1, 1,  2, 2, 1, 1, 1]
+default_joint_pos: [-0.1,0,0,0.3,-0.2,0, -0.1,0,0,0.3,-0.2,0,  0,0,
+                    0.35,0.18,0,0.87,0,  0.35,-0.18,0,0.87,0]
+commands: {}
+actions:
+  JointPositionAction:
+    clip: null
+    joint_names: [.*]
+    # R1_ACTION_SCALE resolved per joint (0.25 * effort_limit / stiffness).
+    scale: [0.15, 0.15, 0.15, 0.15, 0.3125, 0.3125,
+            0.15, 0.15, 0.15, 0.15, 0.3125, 0.3125,
+            0.15, 0.15,
+            0.375, 0.375, 0.4125, 0.4125, 0.4125,
+            0.375, 0.375, 0.4125, 0.4125, 0.4125]
+    offset: [-0.1,0,0,0.3,-0.2,0, -0.1,0,0,0.3,-0.2,0,  0,0,
+             0.35,0.18,0,0.87,0,  0.35,-0.18,0,0.87,0]
+    joint_ids: null
+observations:
+  # 24 joint positions + 24 joint velocities from the reference motion
+  motion_command:
+    params: {command_name: motion}
+    clip: null
+    scale: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    history_length: 1
+  motion_anchor_ori_b:
+    params: {command_name: motion}
+    clip: null
+    scale: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    history_length: 1
+  base_ang_vel:
+    params: {}
+    clip: null
+    scale: [1.0, 1.0, 1.0]
+    history_length: 1
+  joint_pos_rel:
+    params: {}
+    clip: null
+    scale: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    history_length: 1
+  joint_vel_rel:
+    params: {}
+    clip: null
+    scale: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    history_length: 1
+  last_action:
+    params: {}
+    clip: null
+    scale: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    history_length: 1

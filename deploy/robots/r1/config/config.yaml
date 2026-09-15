@@ -7,6 +7,10 @@ FSM:
     Velocity:
       id: 3
       type: RLBase
+
+    Mimic_Habayose:
+      id: 5
+      type: Mimic
   Passive:
     transitions: 
       FixStand: LT + up.on_pressed
@@ -60,4 +64,15 @@ FSM:
   Velocity:
     transitions: 
       Passive: LT + B.on_pressed
+      Mimic_Habayose: RB + A.on_pressed
     policy_dir: config/policy/velocity
+
+  Mimic_Habayose:
+    transitions:
+      Passive: LT + B.on_pressed
+      Velocity: RT + A.on_pressed
+
+    motion_file: config/policy/mimic/habayose_0014/params/habayose_0014.npz
+    policy_dir: config/policy/mimic/habayose_0014/
+    time_start: 0.0
+    time_end: 500.0

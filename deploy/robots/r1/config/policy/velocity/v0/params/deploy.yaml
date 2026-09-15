@@ -1,4 +1,8 @@
-joint_ids_map: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,15,16,17,18,19,22,23,24,25,26]
+# policy joint i -> SDK motor slot joint_ids_map[i]  (State_RLBase.cpp:31).
+# The MJCF nests waist_roll above waist_yaw, so the policy emits roll at 12 and
+# yaw at 13, but the R1 SDK has WAIST_YAW at slot 12 and WAIST_ROLL at 13
+# (R1 Developer Guide, Joint Indexing and Motion Limits). Hence 13,12 here.
+joint_ids_map: [0,1,2,3,4,5,6,7,8,9,10,11,13,12,15,16,17,18,19,22,23,24,25,26]
 step_dt: 0.02
 stiffness: [100, 100, 100, 100, 40, 40,  100, 100, 100, 100, 40, 40,  100, 100,
             40, 40, 20, 20, 20,  40, 40, 20, 20, 20]
@@ -17,8 +21,15 @@ actions:
   JointPositionAction:
     clip: null
     joint_names: [.*]
-    scale: [0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25,
-            0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]
+    # R1_ACTION_SCALE resolved per joint (0.25 * effort_limit / stiffness), which
+    # is what src/tasks/velocity/config/r1/env_cfgs.py trains with. Upstream ships
+    # a flat 0.25 here, which would drive the legs 67% further than the policy
+    # intends and the arms 20-39% short.
+    scale: [0.15, 0.15, 0.15, 0.15, 0.3125, 0.3125,
+            0.15, 0.15, 0.15, 0.15, 0.3125, 0.3125,
+            0.15, 0.15,
+            0.375, 0.375, 0.4125, 0.4125, 0.4125,
+            0.375, 0.375, 0.4125, 0.4125, 0.4125]
     offset: [-0.1,0,0,0.3,-0.2,0, -0.1,0,0,0.3,-0.2,0,  0,0,  0.35,0.18,0,0.87,0, 0.35,-0.18,0,0.87,0]
     joint_ids: null
 observations:

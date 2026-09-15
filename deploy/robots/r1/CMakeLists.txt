@@ -13,10 +13,28 @@ elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
     set(ONNXRUNTIME_DIR "${PROJECT_SOURCE_DIR}/../../thirdparty/onnxruntime-linux-aarch64-1.22.0")
 endif()
 
+# unitree_sdk2 is not always under /usr/local - Unitree's own installer puts it
+# in /opt/unitree_robotics. Find it instead of hardcoding one prefix; override
+# with -DUNITREE_SDK2_ROOT=... if it lives somewhere else again.
+if(NOT DEFINED UNITREE_SDK2_ROOT)
+  foreach(_prefix /opt/unitree_robotics /usr/local)
+    if(EXISTS "${_prefix}/include/ddscxx")
+      set(UNITREE_SDK2_ROOT "${_prefix}")
+      break()
+    endif()
+  endforeach()
+endif()
+if(NOT DEFINED UNITREE_SDK2_ROOT)
+  message(FATAL_ERROR "unitree_sdk2 not found. Pass -DUNITREE_SDK2_ROOT=<prefix>.")
+endif()
+message(STATUS "unitree_sdk2: ${UNITREE_SDK2_ROOT}")
+link_directories(${UNITREE_SDK2_ROOT}/lib)
+
 include_directories(
   /usr/include/eigen3
-  /usr/local/include/ddscxx
-  /usr/local/include/iceoryx/v2.0.2
+  ${UNITREE_SDK2_ROOT}/include
+  ${UNITREE_SDK2_ROOT}/include/ddscxx
+  ${UNITREE_SDK2_ROOT}/include/iceoryx/v2.0.2
   include
   ${ONNXRUNTIME_DIR}/include
   ${PROJECT_SOURCE_DIR}/../../include/

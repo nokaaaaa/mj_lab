@@ -12,6 +12,7 @@ from mjlab.scene import Scene
 from mjlab.sim.sim import Simulation, SimulationCfg
 from src.tasks.tracking.config.g1.env_cfgs import unitree_g1_flat_tracking_env_cfg
 from src.tasks.tracking.config.g1_23dof.env_cfgs import unitree_g1_23dof_flat_tracking_env_cfg
+from src.tasks.tracking.config.r1.env_cfgs import unitree_r1_flat_tracking_env_cfg
 from mjlab.utils.lab_api.math import (
   axis_angle_from_quat,
   quat_conjugate,
@@ -394,6 +395,35 @@ def main(
       "right_wrist_roll_joint",
     ]
     output_dir = "./src/assets/motions/g1_23dof"
+  elif robot == "r1":
+    scene = Scene(unitree_r1_flat_tracking_env_cfg().scene, device=device)
+    joint_names = [  # 24 Dof
+      "left_hip_pitch_joint",
+      "left_hip_roll_joint",
+      "left_hip_yaw_joint",
+      "left_knee_joint",
+      "left_ankle_pitch_joint",
+      "left_ankle_roll_joint",
+      "right_hip_pitch_joint",
+      "right_hip_roll_joint",
+      "right_hip_yaw_joint",
+      "right_knee_joint",
+      "right_ankle_pitch_joint",
+      "right_ankle_roll_joint",
+      "waist_roll_joint",
+      "waist_yaw_joint",
+      "left_shoulder_pitch_joint",
+      "left_shoulder_roll_joint",
+      "left_shoulder_yaw_joint",
+      "left_elbow_joint",
+      "left_wrist_roll_joint",
+      "right_shoulder_pitch_joint",
+      "right_shoulder_roll_joint",
+      "right_shoulder_yaw_joint",
+      "right_elbow_joint",
+      "right_wrist_roll_joint",
+    ]
+    output_dir = "./src/assets/motions/r1"
   else:
     raise ValueError(f"Unsupported robot: {robot}")
 
