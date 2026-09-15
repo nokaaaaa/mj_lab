@@ -9,7 +9,7 @@
 #robot: "a2"
 #robot_scene: "src/assets/robots/unitree_a2/xmls/scene_a2.xml"
 robot: "r1"
-robot_scene: "src/assets/robots/unitree_r1/xmls/scene_r1.xml"
+robot_scene: "src/assets/robots/unitree_r1/xmls/stair.xml"
 
 domain_id: 0  # Domain id
 interface: "lo" # Interface
