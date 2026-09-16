@@ -47,12 +47,12 @@ STAIR_TREAD = 0.20
 MOTION_STAIR_HEIGHT = 0.15
 MOTION_STAIR_TREAD = 0.24
 MOTION_STAIR_COUNT = 3
-MOTION_STAIR_FRONT = 0.25
+MOTION_STAIR_FRONT = 0.20
 MOTION_LANDING_LENGTH = 0.50
 # Six half-swings (right/left on each of the three treads), then command zero.
 MOTION_CLIMB_DURATION = 3.0
 MOTION_FORWARD_SPEED = 0.25
-MOTION_TARGET_DISTANCE = 1.10
+MOTION_TARGET_DISTANCE = 1.05
 MOTION_GAIT_PERIOD = 1.0
 
 
@@ -76,7 +76,7 @@ class BoxR1ThreeStepTerrainCfg(SubTerrainCfg):
     )
 
     # The output origin is the robot spawn. Geometry is expressed relative to
-    # it with the same coordinates as stair.xml: first riser at x=0.25 m.
+    # it with the same coordinates as stair.xml: first riser at x=0.20 m.
     spawn_x = 0.50
     center_y = self.size[1] / 2
     geometries: list[TerrainGeometry] = []
@@ -360,7 +360,7 @@ def unitree_r1_three_step_motion_env_cfg(
       "target_lift": 0.18,
       "target_forward": 0.24,
       "first_target_forward": 0.35,
-      "first_step_position": 0.35,
+      "first_step_position": 0.30,
       "step_tread": MOTION_STAIR_TREAD,
       "command_name": "twist",
       "sensor_name": "feet_ground_contact",
@@ -428,7 +428,7 @@ def unitree_r1_three_step_motion_env_cfg(
     weight=5.0,
     params={
       "target_distance": MOTION_TARGET_DISTANCE,
-      "max_distance": 1.43,
+      "max_distance": 1.38,
       "min_height": 0.85,
       "command_name": "twist",
       "velocity_std": 0.2,

@@ -377,10 +377,10 @@ class stair_alternating_foot_lift:
     stage = torch.stack((left_stage, right_stage), dim=1)
     target_position = first_step_position + stage * step_tread
     landing_position_score = torch.exp(
-      -torch.square(forward_position - target_position) / (0.08**2)
+      -torch.square(forward_position - target_position) / (0.10**2)
     )
     straight_forward_score = torch.exp(
-      -torch.square(lateral_displacement) / (0.05**2)
+      -torch.square(lateral_displacement) / (0.06**2)
     )
 
     contact = sensor.data.found > 0
@@ -391,8 +391,11 @@ class stair_alternating_foot_lift:
     per_foot_score = (
       lift_score
       * forward_score
-      * landing_position_score
-      * straight_forward_score
+      # Preserve a strong lift gradient even while the foot is still near its
+      # takeoff point; placement and lateral alignment become bonuses after
+      # the leg has started clearing the riser.
+      * (0.5 + 0.5 * landing_position_score)
+      * (0.5 + 0.5 * straight_forward_score)
       * support_contact.float()
       * desired_swing.float()
     )
