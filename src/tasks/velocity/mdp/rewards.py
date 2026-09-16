@@ -8,7 +8,7 @@ from mjlab.entity import Entity
 from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.sensor import BuiltinSensor, ContactSensor
-from mjlab.utils.lab_api.math import quat_apply_inverse
+from mjlab.utils.lab_api.math import quat_apply, quat_apply_inverse
 from mjlab.utils.lab_api.string import (
   resolve_matching_names_values,
 )
@@ -270,6 +270,254 @@ def feet_gait(
             scale = (total_command > command_threshold).float()
             reward *= scale
     return reward
+
+
+class stair_alternating_foot_lift:
+  """Reward right-first alternating foot lifts while the other foot supports.
+
+  Clearance is measured from each foot's height immediately before its swing,
+  so the reward remains valid as the robot climbs onto higher stair treads.
+  Site and contact order must be ``(left, right)``.
+  """
+
+  def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+    del cfg
+    self.swing_start_pos = torch.zeros(
+      (env.num_envs, 2, 3), device=env.device, dtype=torch.float32
+    )
+    self.swing_start_relative_z = torch.zeros(
+      (env.num_envs, 2), device=env.device, dtype=torch.float32
+    )
+    self.was_swing = torch.zeros(
+      (env.num_envs, 2), device=env.device, dtype=torch.bool
+    )
+
+  def __call__(
+    self,
+    env: ManagerBasedRlEnv,
+    period: float,
+    target_lift: float,
+    target_forward: float,
+    first_target_forward: float,
+    first_step_position: float,
+    step_tread: float,
+    command_name: str,
+    sensor_name: str,
+    asset_cfg: SceneEntityCfg,
+  ) -> torch.Tensor:
+    asset: Entity = env.scene[asset_cfg.name]
+    sensor: ContactSensor = env.scene[sensor_name]
+    command = env.command_manager.get_command(command_name)
+    assert command is not None
+    assert sensor.data.found is not None
+
+    foot_pos = asset.data.site_pos_w[:, asset_cfg.site_ids, :]
+    assert foot_pos.shape[1] == 2
+    pelvis_z = asset.data.root_link_pos_w[:, 2].unsqueeze(1)
+    foot_relative_z = foot_pos[:, :, 2] - pelvis_z
+
+    phase = (env.episode_length_buf * env.step_dt / period) % 1.0
+    desired_swing = torch.zeros_like(self.was_swing)
+    # A short double-support interval precedes each swing. Right foot is index
+    # 1 and always swings first; left foot (index 0) follows half a cycle later.
+    desired_swing[:, 1] = (phase >= 0.05) & (phase < 0.45)
+    desired_swing[:, 0] = (phase >= 0.55) & (phase < 0.95)
+
+    reset = env.episode_length_buf <= 1
+    starting_swing = desired_swing & ~self.was_swing
+    update_baseline = ~desired_swing | starting_swing | reset.unsqueeze(1)
+    self.swing_start_pos = torch.where(
+      update_baseline.unsqueeze(2), foot_pos, self.swing_start_pos
+    )
+    self.swing_start_relative_z = torch.where(
+      update_baseline, foot_relative_z, self.swing_start_relative_z
+    )
+
+    displacement = foot_pos - self.swing_start_pos
+    # Pelvis-relative height prevents pitching the whole body from faking lift.
+    clearance = torch.clamp(
+      foot_relative_z - self.swing_start_relative_z, min=0.0
+    )
+    lift_score = torch.clamp(clearance / target_lift, min=0.0, max=1.0)
+    unit_x = torch.zeros((env.num_envs, 3), device=env.device)
+    unit_x[:, 0] = 1.0
+    forward_w = quat_apply(asset.data.root_link_quat_w, unit_x)
+    forward_displacement = torch.sum(
+      displacement * forward_w.unsqueeze(1), dim=2
+    )
+    elapsed = env.episode_length_buf * env.step_dt
+    forward_target = torch.where(
+      elapsed < period,
+      torch.full_like(elapsed, first_target_forward),
+      torch.full_like(elapsed, target_forward),
+    ).unsqueeze(1)
+    forward_score = torch.clamp(
+      forward_displacement / forward_target, min=0.0, max=1.0
+    )
+    # Do not move toward the riser until the foot has cleared it vertically.
+    forward_score *= torch.clamp(clearance / 0.10, min=0.0, max=1.0)
+
+    # Each swing has a fixed landing tread.  Relative displacement alone lets
+    # the policy put the first right foot on the floor and the following left
+    # foot on the second tread, so score the absolute site position as well.
+    # Site x is measured from the terrain/environment origin in the robot's
+    # current forward and lateral directions.
+    origin = env.scene.env_origins.unsqueeze(1)
+    relative_pos = foot_pos - origin
+    forward_position = torch.sum(relative_pos * forward_w.unsqueeze(1), dim=2)
+    right_unit = torch.zeros((env.num_envs, 3), device=env.device)
+    right_unit[:, 1] = 1.0
+    right_w = quat_apply(asset.data.root_link_quat_w, right_unit)
+    lateral_displacement = torch.sum(displacement * right_w.unsqueeze(1), dim=2)
+
+    # Right is index 1 and starts at t=0; left is index 0 and starts half a
+    # period later.  Clamp at the third tread so no fourth-step target exists.
+    right_stage = torch.floor(elapsed / period).clamp(min=0.0, max=2.0)
+    left_stage = torch.floor((elapsed - 0.5 * period) / period).clamp(min=0.0, max=2.0)
+    stage = torch.stack((left_stage, right_stage), dim=1)
+    target_position = first_step_position + stage * step_tread
+    landing_position_score = torch.exp(
+      -torch.square(forward_position - target_position) / (0.08**2)
+    )
+    straight_forward_score = torch.exp(
+      -torch.square(lateral_displacement) / (0.05**2)
+    )
+
+    contact = sensor.data.found > 0
+    # When left swings, right must support; when right swings, left must support.
+    support_contact = torch.stack((contact[:, 1], contact[:, 0]), dim=1)
+    # Height alone is not sufficient: multiplying by forward placement makes
+    # pulling a foot backwards worth exactly zero.
+    per_foot_score = (
+      lift_score
+      * forward_score
+      * landing_position_score
+      * straight_forward_score
+      * support_contact.float()
+      * desired_swing.float()
+    )
+    score = torch.sum(per_foot_score, dim=1)
+
+    active_command = torch.linalg.norm(command[:, :2], dim=1) > 0.1
+    self.was_swing.copy_(desired_swing)
+    return score * active_command.float()
+
+
+def stair_swing_foot_upward_velocity(
+  env: ManagerBasedRlEnv,
+  period: float,
+  target_upward_velocity: float,
+  command_name: str,
+  sensor_name: str,
+  asset_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+  """Reward immediate upward motion during each right-first swing onset."""
+  asset: Entity = env.scene[asset_cfg.name]
+  sensor: ContactSensor = env.scene[sensor_name]
+  command = env.command_manager.get_command(command_name)
+  assert command is not None
+  assert sensor.data.found is not None
+
+  phase = (env.episode_length_buf * env.step_dt / period) % 1.0
+  raising = torch.zeros((env.num_envs, 2), device=env.device, dtype=torch.bool)
+  # Site order is (left, right). Reward only the rising half of each swing.
+  raising[:, 1] = (phase >= 0.05) & (phase < 0.25)
+  raising[:, 0] = (phase >= 0.55) & (phase < 0.75)
+
+  contact = sensor.data.found > 0
+  support_contact = torch.stack((contact[:, 1], contact[:, 0]), dim=1)
+  foot_upward_velocity = asset.data.site_lin_vel_w[:, asset_cfg.site_ids, 2]
+  upward_score = torch.clamp(
+    foot_upward_velocity / target_upward_velocity, min=0.0, max=1.0
+  )
+  score = torch.sum(
+    upward_score * raising.float() * support_contact.float(), dim=1
+  )
+  active_command = torch.linalg.norm(command[:, :2], dim=1) > 0.1
+  return score * active_command.float()
+
+
+def stair_swing_foot_forward_velocity(
+  env: ManagerBasedRlEnv,
+  period: float,
+  target_forward_velocity: float,
+  command_name: str,
+  sensor_name: str,
+  asset_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+  """Reward moving the scheduled swing foot in the robot's forward direction."""
+  asset: Entity = env.scene[asset_cfg.name]
+  sensor: ContactSensor = env.scene[sensor_name]
+  command = env.command_manager.get_command(command_name)
+  assert command is not None
+  assert sensor.data.found is not None
+
+  phase = (env.episode_length_buf * env.step_dt / period) % 1.0
+  swinging = torch.zeros((env.num_envs, 2), device=env.device, dtype=torch.bool)
+  swinging[:, 1] = (phase >= 0.25) & (phase < 0.45)
+  swinging[:, 0] = (phase >= 0.75) & (phase < 0.95)
+
+  contact = sensor.data.found > 0
+  support_contact = torch.stack((contact[:, 1], contact[:, 0]), dim=1)
+  unit_x = torch.zeros((env.num_envs, 3), device=env.device)
+  unit_x[:, 0] = 1.0
+  forward_w = quat_apply(asset.data.root_link_quat_w, unit_x)
+  foot_velocity = asset.data.site_lin_vel_w[:, asset_cfg.site_ids, :]
+  foot_forward_velocity = torch.sum(foot_velocity * forward_w.unsqueeze(1), dim=2)
+  forward_score = torch.clamp(
+    foot_forward_velocity / target_forward_velocity, min=0.0, max=1.0
+  )
+  score = torch.sum(
+    forward_score * swinging.float() * support_contact.float(), dim=1
+  )
+  active_command = torch.linalg.norm(command[:, :2], dim=1) > 0.1
+  return score * active_command.float()
+
+
+def stair_swing_leg_flexion(
+  env: ManagerBasedRlEnv,
+  period: float,
+  command_name: str,
+  sensor_name: str,
+  hip_neutral: float,
+  hip_target: float,
+  knee_neutral: float,
+  knee_target: float,
+  asset_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+  """Reward forward hip flexion and deep knee flexion on the swing leg.
+
+  Joint order must be left hip, left knee, right hip, right knee.
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  sensor: ContactSensor = env.scene[sensor_name]
+  command = env.command_manager.get_command(command_name)
+  assert command is not None
+  assert sensor.data.found is not None
+
+  joint_pos = asset.data.joint_pos[:, asset_cfg.joint_ids]
+  assert joint_pos.shape[1] == 4
+  hip_pos = torch.stack((joint_pos[:, 0], joint_pos[:, 2]), dim=1)
+  knee_pos = torch.stack((joint_pos[:, 1], joint_pos[:, 3]), dim=1)
+  hip_score = torch.clamp(
+    (hip_neutral - hip_pos) / (hip_neutral - hip_target), min=0.0, max=1.0
+  )
+  knee_score = torch.clamp(
+    (knee_pos - knee_neutral) / (knee_target - knee_neutral), min=0.0, max=1.0
+  )
+
+  phase = (env.episode_length_buf * env.step_dt / period) % 1.0
+  swinging = torch.zeros((env.num_envs, 2), device=env.device, dtype=torch.bool)
+  swinging[:, 1] = (phase >= 0.05) & (phase < 0.45)
+  swinging[:, 0] = (phase >= 0.55) & (phase < 0.95)
+  contact = sensor.data.found > 0
+  support_contact = torch.stack((contact[:, 1], contact[:, 0]), dim=1)
+  flexion_score = 0.5 * (hip_score + knee_score)
+  score = torch.sum(
+    flexion_score * swinging.float() * support_contact.float(), dim=1
+  )
+  active_command = torch.linalg.norm(command[:, :2], dim=1) > 0.1
+  return score * active_command.float()
 
 
 class feet_swing_height:

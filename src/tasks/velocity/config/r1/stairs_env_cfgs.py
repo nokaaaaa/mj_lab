@@ -20,8 +20,12 @@ import mujoco
 import mjlab.terrains as terrain_gen
 import numpy as np
 from mjlab.envs import ManagerBasedRlEnvCfg
+from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.observation_manager import ObservationGroupCfg
 from mjlab.managers.reward_manager import RewardTermCfg
+from mjlab.managers.scene_entity_config import SceneEntityCfg
+from mjlab.managers.termination_manager import TerminationTermCfg
+from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.terrains.terrain_generator import (
   SubTerrainCfg,
   TerrainGeneratorCfg,
@@ -30,6 +34,7 @@ from mjlab.terrains.terrain_generator import (
 )
 
 from src.tasks.velocity.config.r1.env_cfgs import unitree_r1_rough_env_cfg
+from src.assets.robots import R1_ACTION_SCALE
 from src.tasks.velocity import mdp
 
 # Measured on site: riser ~0.20 m. Tread read as 0.20-0.25 m from the photos;
@@ -42,11 +47,13 @@ STAIR_TREAD = 0.20
 MOTION_STAIR_HEIGHT = 0.15
 MOTION_STAIR_TREAD = 0.24
 MOTION_STAIR_COUNT = 3
-MOTION_STAIR_FRONT = 0.20
+MOTION_STAIR_FRONT = 0.25
 MOTION_LANDING_LENGTH = 0.50
-MOTION_CLIMB_DURATION = 5.0
+# Six half-swings (right/left on each of the three treads), then command zero.
+MOTION_CLIMB_DURATION = 3.0
 MOTION_FORWARD_SPEED = 0.25
-MOTION_TARGET_DISTANCE = 1.05
+MOTION_TARGET_DISTANCE = 1.10
+MOTION_GAIT_PERIOD = 1.0
 
 
 @dataclass(kw_only=True)
@@ -69,7 +76,7 @@ class BoxR1ThreeStepTerrainCfg(SubTerrainCfg):
     )
 
     # The output origin is the robot spawn. Geometry is expressed relative to
-    # it with the same coordinates as stair.xml: first riser at x=0.20 m.
+    # it with the same coordinates as stair.xml: first riser at x=0.25 m.
     spawn_x = 0.50
     center_y = self.size[1] / 2
     geometries: list[TerrainGeometry] = []
@@ -233,6 +240,10 @@ def unitree_r1_three_step_motion_env_cfg(
 ) -> ManagerBasedRlEnvCfg:
   """Fixed blind motion: climb the sim2sim staircase, then stand still."""
   cfg = unitree_r1_stairs_blind_env_cfg(play=play)
+  # The non-foot contact sensor keeps all body/stair pairs available. A single
+  # inspection environment can therefore have more simultaneous contacts than
+  # the rough-task default buffer.
+  cfg.sim.nconmax = 128
 
   assert cfg.scene.terrain is not None
   height_range = (
@@ -272,7 +283,49 @@ def unitree_r1_three_step_motion_env_cfg(
     forward_speed=MOTION_FORWARD_SPEED,
     climb_duration=MOTION_CLIMB_DURATION,
   )
+  # Keep the upper body quiet while the legs execute the scripted climb.
+  joint_pos_action = cfg.actions["joint_pos"]
+  assert isinstance(joint_pos_action, JointPositionActionCfg)
+  joint_pos_action.scale = {
+    **R1_ACTION_SCALE,
+    "waist_.*": 0.04,
+    ".*_shoulder_pitch.*": 0.06,
+    ".*_shoulder_roll.*": 0.06,
+    ".*_shoulder_yaw.*": 0.05,
+    ".*_elbow.*": 0.05,
+    ".*_wrist_roll.*": 0.04,
+  }
   cfg.curriculum.pop("command_vel", None)
+  for observation_group in ("actor", "critic"):
+    cfg.observations[observation_group].terms["phase"].params[
+      "period"
+    ] = MOTION_GAIT_PERIOD
+
+  # Only the fourteen sole collision geoms may touch the floor or stairs.
+  foot_geom_names = tuple(
+    f"{side}_foot{i}_collision"
+    for side in ("left", "right")
+    for i in range(1, 8)
+  )
+  nonfoot_ground_cfg = ContactSensorCfg(
+    name="stair_nonfoot_ground_touch",
+    primary=ContactMatch(
+      mode="geom",
+      entity="robot",
+      pattern=r".*_collision$",
+      exclude=foot_geom_names,
+    ),
+    secondary=ContactMatch(mode="body", pattern="terrain"),
+    fields=("found", "force"),
+    reduce="none",
+    num_slots=1,
+    history_length=4,
+  )
+  cfg.scene.sensors = (cfg.scene.sensors or ()) + (nonfoot_ground_cfg,)
+  cfg.terminations["nonfoot_ground_contact"] = TerminationTermCfg(
+    func=mdp.illegal_contact,
+    params={"sensor_name": nonfoot_ground_cfg.name, "force_threshold": 1.0},
+  )
 
   # World-frame foot height is not a valid clearance target on elevated steps.
   cfg.rewards.pop("foot_clearance", None)
@@ -290,6 +343,81 @@ def unitree_r1_three_step_motion_env_cfg(
     weight=2.0,
     params={"command_name": "twist"},
   )
+  # The generic gait term already schedules the right foot first. Strengthen
+  # it and require an 18 cm lift while the opposite foot is supporting. The
+  # extra 3 cm clears the 15 cm stair lip without an exaggerated high step.
+  cfg.rewards["foot_gait"].weight = 3.0
+  cfg.rewards["foot_gait"].params["period"] = MOTION_GAIT_PERIOD
+  # The generic pose reward favors the default standing pose. Keep a small
+  # stabilizing contribution without letting it dominate swing-leg flexion.
+  cfg.rewards["pose"].weight = 0.25
+  cfg.rewards["body_orientation_l2"].weight = -3.0
+  cfg.rewards["stair_alternating_foot_lift"] = RewardTermCfg(
+    func=mdp.stair_alternating_foot_lift,
+    weight=12.0,
+    params={
+      "period": MOTION_GAIT_PERIOD,
+      "target_lift": 0.18,
+      "target_forward": 0.24,
+      "first_target_forward": 0.35,
+      "first_step_position": 0.35,
+      "step_tread": MOTION_STAIR_TREAD,
+      "command_name": "twist",
+      "sensor_name": "feet_ground_contact",
+      "asset_cfg": SceneEntityCfg(
+        "robot", site_names=("left_foot", "right_foot")
+      ),
+    },
+  )
+  cfg.rewards["stair_swing_upward_velocity"] = RewardTermCfg(
+    func=mdp.stair_swing_foot_upward_velocity,
+    weight=4.0,
+    params={
+      "period": MOTION_GAIT_PERIOD,
+      "target_upward_velocity": 0.5,
+      "command_name": "twist",
+      "sensor_name": "feet_ground_contact",
+      "asset_cfg": SceneEntityCfg(
+        "robot", site_names=("left_foot", "right_foot")
+      ),
+    },
+  )
+  cfg.rewards["stair_swing_forward_velocity"] = RewardTermCfg(
+    func=mdp.stair_swing_foot_forward_velocity,
+    weight=5.0,
+    params={
+      "period": MOTION_GAIT_PERIOD,
+      "target_forward_velocity": 0.8,
+      "command_name": "twist",
+      "sensor_name": "feet_ground_contact",
+      "asset_cfg": SceneEntityCfg(
+        "robot", site_names=("left_foot", "right_foot")
+      ),
+    },
+  )
+  cfg.rewards["stair_swing_leg_flexion"] = RewardTermCfg(
+    func=mdp.stair_swing_leg_flexion,
+    weight=6.0,
+    params={
+      "period": MOTION_GAIT_PERIOD,
+      "command_name": "twist",
+      "sensor_name": "feet_ground_contact",
+      "hip_neutral": -0.1,
+      "hip_target": -0.55,
+      "knee_neutral": 0.3,
+      "knee_target": 0.95,
+      "asset_cfg": SceneEntityCfg(
+        "robot",
+        joint_names=(
+          "left_hip_pitch_joint",
+          "left_knee_joint",
+          "right_hip_pitch_joint",
+          "right_knee_joint",
+        ),
+        preserve_order=True,
+      ),
+    },
+  )
   cfg.rewards["stair_progress"] = RewardTermCfg(
     func=mdp.stair_forward_progress,
     weight=3.0,
@@ -300,7 +428,7 @@ def unitree_r1_three_step_motion_env_cfg(
     weight=5.0,
     params={
       "target_distance": MOTION_TARGET_DISTANCE,
-      "max_distance": 1.38,
+      "max_distance": 1.43,
       "min_height": 0.85,
       "command_name": "twist",
       "velocity_std": 0.2,

@@ -39,7 +39,7 @@ observations:
     scale: [1.0,1.0,1.0]
     history_length: 1
   stair_gait_phase:
-    params: {period: 0.6, climb_duration: 5.0}
+    params: {period: 1.0, climb_duration: 5.0}
     clip: null
     scale: [1.0,1.0]
     history_length: 1
