@@ -60,6 +60,66 @@ def track_angular_velocity(
   return torch.exp(-ang_vel_error / std**2)
 
 
+def stair_forward_progress(
+  env: ManagerBasedRlEnv,
+  target_distance: float,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Reward reaching the fixed staircase landing along its +x axis."""
+  asset: Entity = env.scene[asset_cfg.name]
+  distance = asset.data.root_link_pos_w[:, 0] - env.scene.env_origins[:, 0]
+  return torch.clamp(distance / target_distance, min=0.0, max=1.0)
+
+
+def stair_forward_velocity(
+  env: ManagerBasedRlEnv,
+  command_name: str,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Reward actual forward motion while the stair-climb command is active.
+
+  Unlike the Gaussian velocity-tracking reward, this term is exactly zero when
+  the robot stands still.  That prevents a conservative standing policy from
+  collecting most of the tracking reward without attempting the staircase.
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  command = env.command_manager.get_command(command_name)
+  assert command is not None, f"Command '{command_name}' not found."
+
+  commanded_forward_speed = command[:, 0]
+  moving_command = commanded_forward_speed > 0.1
+  speed_ratio = asset.data.root_link_lin_vel_b[:, 0] / torch.clamp(
+    commanded_forward_speed, min=0.1
+  )
+  return moving_command.float() * torch.clamp(speed_ratio, min=0.0, max=1.0)
+
+
+def stair_top_stop(
+  env: ManagerBasedRlEnv,
+  target_distance: float,
+  max_distance: float,
+  min_height: float,
+  command_name: str,
+  velocity_std: float = 0.2,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Reward standing still on the landing after the motion command stops."""
+  asset: Entity = env.scene[asset_cfg.name]
+  distance = asset.data.root_link_pos_w[:, 0] - env.scene.env_origins[:, 0]
+  height = asset.data.root_link_pos_w[:, 2] - env.scene.env_origins[:, 2]
+  on_landing = (
+    (distance >= target_distance)
+    & (distance <= max_distance)
+    & (height >= min_height)
+  )
+  command = env.command_manager.get_command(command_name)
+  stopped_command = torch.linalg.norm(command, dim=1) < 0.1
+  lin_speed_sq = torch.sum(torch.square(asset.data.root_link_lin_vel_b), dim=1)
+  ang_speed_sq = torch.sum(torch.square(asset.data.root_link_ang_vel_b), dim=1)
+  still = torch.exp(-(lin_speed_sq + 0.25 * ang_speed_sq) / velocity_std**2)
+  return on_landing.float() * stopped_command.float() * still
+
+
 def body_orientation_l2(
   env: ManagerBasedRlEnv,
   asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
@@ -425,4 +485,3 @@ def stand_still(
             scale = (total_command <= command_threshold).float()
             reward *= scale
     return reward
-

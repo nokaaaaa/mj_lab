@@ -1,0 +1,60 @@
+# Fixed blind motion for src/assets/robots/unitree_r1/xmls/stair.xml.
+# Entering the FSM state resets the timer: walk for 5 s, then hold still.
+joint_ids_map: [0,1,2,3,4,5,6,7,8,9,10,11,13,12,15,16,17,18,19,22,23,24,25,26]
+step_dt: 0.02
+stiffness: [100,100,100,100,40,40, 100,100,100,100,40,40, 100,100,
+            40,40,20,20,20, 40,40,20,20,20]
+damping: [2,2,2,2,2,2, 2,2,2,2,2,2, 2,2,
+          2,2,1,1,1, 2,2,1,1,1]
+default_joint_pos: [-0.1,0,0,0.3,-0.2,0, -0.1,0,0,0.3,-0.2,0,
+                    0,0, 0.35,0.18,0,0.87,0, 0.35,-0.18,0,0.87,0]
+
+actions:
+  JointPositionAction:
+    clip: null
+    joint_names: [.*]
+    scale: [0.15,0.15,0.15,0.15,0.3125,0.3125,
+            0.15,0.15,0.15,0.15,0.3125,0.3125,
+            0.15,0.15,
+            0.375,0.375,0.4125,0.4125,0.4125,
+            0.375,0.375,0.4125,0.4125,0.4125]
+    offset: [-0.1,0,0,0.3,-0.2,0, -0.1,0,0,0.3,-0.2,0,
+             0,0, 0.35,0.18,0,0.87,0, 0.35,-0.18,0,0.87,0]
+    joint_ids: null
+
+observations:
+  base_ang_vel:
+    params: {}
+    clip: null
+    scale: [1.0,1.0,1.0]
+    history_length: 1
+  projected_gravity:
+    params: {}
+    clip: null
+    scale: [1.0,1.0,1.0]
+    history_length: 1
+  stair_motion_command:
+    params: {forward_speed: 0.25, climb_duration: 5.0}
+    clip: null
+    scale: [1.0,1.0,1.0]
+    history_length: 1
+  stair_gait_phase:
+    params: {period: 0.6, climb_duration: 5.0}
+    clip: null
+    scale: [1.0,1.0]
+    history_length: 1
+  joint_pos_rel:
+    params: {}
+    clip: null
+    scale: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    history_length: 1
+  joint_vel_rel:
+    params: {}
+    clip: null
+    scale: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    history_length: 1
+  last_action:
+    params: {}
+    clip: null
+    scale: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    history_length: 1
