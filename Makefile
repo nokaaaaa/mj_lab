@@ -15,7 +15,13 @@ MOTION_FILE ?= src/assets/motions/r1/r1_stairs_step_by_step_2x.npz
 # GUI file picker used to choose the checkpoint (Ubuntu's standard dialog).
 ZENITY := $(shell command -v zenity 2>/dev/null)
 
-.PHONY: check
+# TensorBoard settings for `make tensor`. Ports 6006/6007 are already used
+# by other long-running TensorBoard instances on this machine, so default
+# to a free one; override if it's taken too.
+TENSORBOARD_PORT ?= 6008
+TENSORBOARD_LOGDIR ?= logs/rsl_rl
+
+.PHONY: check tensor
 
 # Open a GUI file chooser (rooted at logs/rsl_rl) to pick a model_*.pt
 # checkpoint, then play it in the MuJoCo viewer, e.g.:
@@ -49,3 +55,28 @@ check:
 		--motion-file="$(MOTION_FILE)" \
 		--num-envs=1 \
 		--viewer=native
+
+# Start (or reuse) a TensorBoard server over all training runs under
+# logs/rsl_rl/ (all experiments, including r1_stairs_tracking_2x) and open
+# it in the browser, e.g.:
+#   make tensor
+#   make tensor TENSORBOARD_PORT=6009 TENSORBOARD_LOGDIR=logs/rsl_rl/r1_stairs_tracking_2x
+tensor:
+	@if [ -z "$(PYTHON)" ]; then \
+		echo "No virtualenv python found (looked for .venv/bin/python and $(FALLBACK_PYTHON))." >&2; \
+		echo "Pass PYTHON=/path/to/python to override." >&2; \
+		exit 1; \
+	fi
+	@URL="http://localhost:$(TENSORBOARD_PORT)"; \
+	if ss -ltn 2>/dev/null | grep -q ":$(TENSORBOARD_PORT) "; then \
+		echo "TensorBoard already running at $$URL"; \
+	else \
+		mkdir -p logs; \
+		nohup "$(PYTHON)" -m tensorboard.main \
+			--logdir "$(TENSORBOARD_LOGDIR)" --port $(TENSORBOARD_PORT) --bind_all \
+			> logs/tensorboard_$(TENSORBOARD_PORT).log 2>&1 & \
+		echo "Starting TensorBoard on $(TENSORBOARD_LOGDIR) at $$URL ..."; \
+		sleep 3; \
+	fi; \
+	command -v xdg-open >/dev/null 2>&1 && xdg-open "$$URL" >/dev/null 2>&1 & \
+	echo "Open $$URL if the browser didn't launch automatically."

@@ -1,5 +1,7 @@
 """Unitree R1 flat tracking environment configurations."""
 
+from dataclasses import fields
+
 from src.assets.robots import (
   R1_ACTION_SCALE,
   get_r1_robot_cfg,
@@ -11,7 +13,7 @@ from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.managers.observation_manager import ObservationGroupCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
-from mjlab.tasks.tracking.mdp import MotionCommandCfg
+from src.tasks.tracking.mdp.commands import MotionCommandCfg
 
 from src.tasks.tracking.tracking_env_cfg import make_tracking_env_cfg
 
@@ -47,8 +49,18 @@ def unitree_r1_flat_tracking_env_cfg(
   assert isinstance(joint_pos_action, JointPositionActionCfg)
   joint_pos_action.scale = R1_ACTION_SCALE
 
-  motion_cmd = cfg.commands["motion"]
-  assert isinstance(motion_cmd, MotionCommandCfg)
+  base_motion_cmd = cfg.commands["motion"]
+  motion_cmd = MotionCommandCfg(
+    **{
+      field.name: getattr(base_motion_cmd, field.name)
+      for field in fields(base_motion_cmd) if field.name != "viz"
+    },
+    viz=MotionCommandCfg.VizCfg(
+      mode=base_motion_cmd.viz.mode,
+      ghost_color=base_motion_cmd.viz.ghost_color,
+    ),
+  )
+  cfg.commands["motion"] = motion_cmd
   motion_cmd.anchor_body_name = "torso_link"
   # R1's arms end at the wrist roll link (no wrist pitch/yaw), so it takes the
   # place of the G1's wrist yaw link as the hand body.

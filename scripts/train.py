@@ -14,6 +14,7 @@ from mjlab.envs import ManagerBasedRlEnv, ManagerBasedRlEnvCfg
 from mjlab.rl import MjlabOnPolicyRunner, RslRlBaseRunnerCfg, RslRlVecEnvWrapper
 from mjlab.tasks.registry import list_tasks, load_env_cfg, load_rl_cfg, load_runner_cls
 from mjlab.tasks.tracking.mdp import MotionCommandCfg
+from src.tasks.tracking.mdp.commands import MotionCommandCfg as LocalMotionCommandCfg
 from mjlab.utils.gpu import select_gpus
 from mjlab.utils.os import dump_yaml, get_checkpoint_path
 from mjlab.utils.torch import configure_torch_backends
@@ -63,7 +64,7 @@ def run_train(task_id: str, cfg: TrainConfig, log_dir: Path) -> None:
 
   # Check if this is a tracking task by checking for motion command.
   is_tracking_task = "motion" in cfg.env.commands and isinstance(
-    cfg.env.commands["motion"], MotionCommandCfg
+    cfg.env.commands["motion"], (MotionCommandCfg, LocalMotionCommandCfg)
   )
 
   if is_tracking_task:
@@ -73,7 +74,7 @@ def run_train(task_id: str, cfg: TrainConfig, log_dir: Path) -> None:
     if not motion_path.exists():
       raise FileNotFoundError(f"Motion file not found: {motion_path}")
     motion_cmd = cfg.env.commands["motion"]
-    assert isinstance(motion_cmd, MotionCommandCfg)
+    assert isinstance(motion_cmd, (MotionCommandCfg, LocalMotionCommandCfg))
     motion_cmd.motion_file = str(motion_path)
     print(f"[INFO] Using motion file: {motion_cmd.motion_file}")
 
@@ -135,8 +136,13 @@ def run_train(task_id: str, cfg: TrainConfig, log_dir: Path) -> None:
     dump_yaml(log_dir / "params" / "env.yaml", env_cfg)
     dump_yaml(log_dir / "params" / "agent.yaml", agent_cfg)
 
+  motion_cfg = cfg.env.commands.get("motion")
+  fixed_start = isinstance(motion_cfg, LocalMotionCommandCfg) and bool(
+    motion_cfg.startup_contact_sensor
+  )
   runner.learn(
-    num_learning_iterations=cfg.agent.max_iterations, init_at_random_ep_len=True
+    num_learning_iterations=cfg.agent.max_iterations,
+    init_at_random_ep_len=not fixed_start,
   )
 
   env.close()
