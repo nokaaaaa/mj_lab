@@ -8,6 +8,10 @@ PYTHON := $(firstword $(wildcard .venv/bin/python) $(wildcard $(FALLBACK_PYTHON)
 # this can't be auto-detected reliably; override it per invocation instead.
 TASK ?= Unitree-R1-Stairs-Tracking-2x
 
+# Tracking tasks need an explicit reference motion (play.py leaves it unset
+# otherwise); override alongside TASK when checking a different task.
+MOTION_FILE ?= src/assets/motions/r1/r1_stairs_step_by_step_2x.npz
+
 # GUI file picker used to choose the checkpoint (Ubuntu's standard dialog).
 ZENITY := $(shell command -v zenity 2>/dev/null)
 
@@ -16,7 +20,7 @@ ZENITY := $(shell command -v zenity 2>/dev/null)
 # Open a GUI file chooser (rooted at logs/rsl_rl) to pick a model_*.pt
 # checkpoint, then play it in the MuJoCo viewer, e.g.:
 #   make check
-#   make check TASK=Unitree-R1-Stairs-Blind   # fallback task override
+#   make check TASK=Unitree-R1-Stairs-Blind MOTION_FILE=path/to/motion.npz
 check:
 	@if [ -z "$(PYTHON)" ]; then \
 		echo "No virtualenv python found (looked for .venv/bin/python and $(FALLBACK_PYTHON))." >&2; \
@@ -39,7 +43,9 @@ check:
 	fi; \
 	echo "Checkpoint: $$CKPT"; \
 	echo "Task: $(TASK)"; \
+	echo "Motion file: $(MOTION_FILE)"; \
 	"$(PYTHON)" scripts/play.py "$(TASK)" \
 		--checkpoint-file="$$CKPT" \
+		--motion-file="$(MOTION_FILE)" \
 		--num-envs=1 \
 		--viewer=native
