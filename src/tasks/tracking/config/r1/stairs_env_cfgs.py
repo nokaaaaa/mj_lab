@@ -14,6 +14,9 @@ from src.tasks.tracking.mdp.stair_rewards import (
   stair_foot_target,
   stair_swing_clearance,
   stair_swing_forward,
+  arm_excess_motion_penalty,
+  arm_position_error_penalty,
+  arm_joint_velocity_error_penalty,
 )
 from src.tasks.tracking.mdp.terminations import bad_anchor_pos
 from src.tasks.velocity.config.r1.stairs_env_cfgs import (
@@ -214,7 +217,25 @@ def unitree_r1_stairs_tracking_env_cfg(play: bool = False):
   # than the whole-body reward) so foot placement is shaped continuously,
   # not just at the moment of contact.
   cfg.rewards["stair_foot_target"] = RewardTermCfg(
-    func=stair_foot_target, weight=3.0, params={"command_name": "motion"}
+    func=stair_foot_target, weight=8.0, params={"command_name": "motion"}
+  )
+  # Keep the wrists close to the reference speed.  The margin preserves the
+  # intended arm movement while discouraging additional hand flailing caused
+  # by residual exploration.
+  cfg.rewards["arm_excess_motion"] = RewardTermCfg(
+    func=arm_excess_motion_penalty,
+    weight=-1.0,
+    params={"command_name": "motion", "speed_margin": 0.15},
+  )
+  cfg.rewards["arm_position_error"] = RewardTermCfg(
+    func=arm_position_error_penalty,
+    weight=-1.0,
+    params={"command_name": "motion", "std": 0.10},
+  )
+  cfg.rewards["arm_joint_velocity_error"] = RewardTermCfg(
+    func=arm_joint_velocity_error_penalty,
+    weight=-1.0,
+    params={"command_name": "motion", "std": 1.0},
   )
   # Strong, independent lift and forward gradients are needed from a planted
   # foot; a narrow symmetric tracking kernel left the scratch policy still.

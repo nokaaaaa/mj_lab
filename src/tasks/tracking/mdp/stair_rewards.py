@@ -154,7 +154,103 @@ def stair_foot_target(env: "ManagerBasedRlEnv", command_name: str) -> torch.Tens
   target = command.body_pos_w[:, indexes]
   actual = command.robot_body_pos_w[:, indexes]
   error = torch.square(target - actual).sum(dim=-1)
-  return torch.exp(-error.mean(dim=-1) / 0.18**2)
+  return torch.exp(-error.mean(dim=-1) / 0.10**2)
+
+
+def arm_excess_motion_penalty(
+  env: "ManagerBasedRlEnv",
+  command_name: str,
+  speed_margin: float = 0.15,
+) -> torch.Tensor:
+  """Penalize excess linear speed across the complete arm.
+
+  The reference arm movement remains allowed.  Only the excess speed of the
+  actual shoulder, elbow, and wrist links over their corresponding reference
+  speeds (plus a small margin) is penalized.  Averaging all six links prevents
+  fast motion at the shoulder or elbow from being hidden by a wrist-only term.
+  """
+  command = cast(MotionCommand, env.command_manager.get_term(command_name))
+  arm_indexes = [
+    command.cfg.body_names.index(name)
+    for name in (
+      "left_shoulder_roll_link",
+      "left_elbow_link",
+      "left_wrist_roll_link",
+      "right_shoulder_roll_link",
+      "right_elbow_link",
+      "right_wrist_roll_link",
+    )
+  ]
+  actual_speed = torch.linalg.vector_norm(
+    command.robot_body_lin_vel_w[:, arm_indexes], dim=-1
+  )
+  reference_speed = torch.linalg.vector_norm(
+    command.body_lin_vel_w[:, arm_indexes], dim=-1
+  )
+  excess_speed = torch.relu(actual_speed - reference_speed - speed_margin)
+  return torch.square(excess_speed).mean(dim=-1)
+
+
+def arm_position_error_penalty(
+  env: "ManagerBasedRlEnv",
+  command_name: str,
+  std: float = 0.10,
+) -> torch.Tensor:
+  """Penalize absolute position error across all arm links.
+
+  This complements the velocity penalty: an arm that moves at the correct
+  speed but remains at a constant offset from the reference is still penalized.
+  The squared error is normalized by ``std`` so the weight has a predictable
+  scale (an RMS error of ``std`` contributes approximately one).
+  """
+  command = cast(MotionCommand, env.command_manager.get_term(command_name))
+  arm_indexes = [
+    command.cfg.body_names.index(name)
+    for name in (
+      "left_shoulder_roll_link",
+      "left_elbow_link",
+      "left_wrist_roll_link",
+      "right_shoulder_roll_link",
+      "right_elbow_link",
+      "right_wrist_roll_link",
+    )
+  ]
+  error = torch.square(
+    command.robot_body_pos_w[:, arm_indexes]
+    - command.body_pos_w[:, arm_indexes]
+  ).sum(dim=-1)
+  return error.mean(dim=-1) / std**2
+
+
+def arm_joint_velocity_error_penalty(
+  env: "ManagerBasedRlEnv",
+  command_name: str,
+  std: float = 1.0,
+) -> torch.Tensor:
+  """Penalize arm joint velocities that differ from the reference.
+
+  Link linear velocity does not fully capture fast shoulder/elbow/wrist
+  rotations.  This term directly constrains the eight arm joints, while still
+  allowing the velocity prescribed by the reference motion.
+  """
+  command = cast(MotionCommand, env.command_manager.get_term(command_name))
+  robot = command.robot
+  arm_joint_names = (
+    "left_shoulder_pitch_joint",
+    "left_shoulder_roll_joint",
+    "left_shoulder_yaw_joint",
+    "left_elbow_joint",
+    "left_wrist_roll_joint",
+    "right_shoulder_pitch_joint",
+    "right_shoulder_roll_joint",
+    "right_shoulder_yaw_joint",
+    "right_elbow_joint",
+    "right_wrist_roll_joint",
+  )
+  joint_ids, _ = robot.find_joints(arm_joint_names, preserve_order=True)
+  actual = command.robot_joint_vel[:, joint_ids]
+  target = command.joint_vel[:, joint_ids]
+  return torch.square((actual - target) / std).mean(dim=-1)
 
 
 def stair_initial_stillness(env: "ManagerBasedRlEnv", command_name: str) -> torch.Tensor:
