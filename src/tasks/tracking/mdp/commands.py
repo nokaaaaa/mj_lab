@@ -78,6 +78,8 @@ class MotionCommand(CommandTerm):
       self.cfg.motion_file, self.body_indexes, device=self.device
     )
     self.time_steps = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+    self._startup_contact = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+    self._startup_wait = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
     self.body_pos_relative_w = torch.zeros(
       self.num_envs, len(cfg.body_names), 3, device=self.device
     )
@@ -129,7 +131,16 @@ class MotionCommand(CommandTerm):
 
   @property
   def joint_vel(self) -> torch.Tensor:
-    return self.motion.joint_vel[self.time_steps]
+    velocity = self.motion.joint_vel[self.time_steps]
+    if self.cfg.startup_contact_sensor:
+      velocity = torch.where(self._startup_ready[:, None], velocity, 0.0)
+    return velocity
+
+  @property
+  def _startup_ready(self) -> torch.Tensor:
+    return self._startup_contact & (
+      self._startup_wait >= round(self.cfg.startup_pause_s / self._env.step_dt)
+    )
 
   @property
   def body_pos_w(self) -> torch.Tensor:
@@ -143,11 +154,17 @@ class MotionCommand(CommandTerm):
 
   @property
   def body_lin_vel_w(self) -> torch.Tensor:
-    return self.motion.body_lin_vel_w[self.time_steps]
+    velocity = self.motion.body_lin_vel_w[self.time_steps]
+    if self.cfg.startup_contact_sensor:
+      velocity = torch.where(self._startup_ready[:, None, None], velocity, 0.0)
+    return velocity
 
   @property
   def body_ang_vel_w(self) -> torch.Tensor:
-    return self.motion.body_ang_vel_w[self.time_steps]
+    velocity = self.motion.body_ang_vel_w[self.time_steps]
+    if self.cfg.startup_contact_sensor:
+      velocity = torch.where(self._startup_ready[:, None, None], velocity, 0.0)
+    return velocity
 
   @property
   def anchor_pos_w(self) -> torch.Tensor:
@@ -162,11 +179,11 @@ class MotionCommand(CommandTerm):
 
   @property
   def anchor_lin_vel_w(self) -> torch.Tensor:
-    return self.motion.body_lin_vel_w[self.time_steps, self.motion_anchor_body_index]
+    return self.body_lin_vel_w[:, self.motion_anchor_body_index]
 
   @property
   def anchor_ang_vel_w(self) -> torch.Tensor:
-    return self.motion.body_ang_vel_w[self.time_steps, self.motion_anchor_body_index]
+    return self.body_ang_vel_w[:, self.motion_anchor_body_index]
 
   @property
   def robot_joint_pos(self) -> torch.Tensor:
@@ -295,6 +312,8 @@ class MotionCommand(CommandTerm):
     self.metrics["sampling_top1_bin"][:] = 0.5  # No specific bin preference.
 
   def _resample_command(self, env_ids: torch.Tensor):
+    self._startup_contact[env_ids] = False
+    self._startup_wait[env_ids] = 0
     if self.cfg.sampling_mode == "start":
       self.time_steps[env_ids] = 0
     elif self.cfg.sampling_mode == "uniform":
@@ -302,6 +321,22 @@ class MotionCommand(CommandTerm):
     else:
       assert self.cfg.sampling_mode == "adaptive"
       self._adaptive_sampling(env_ids)
+
+    if self.cfg.cold_start_ratio > 0.0 and self.cfg.sampling_mode != "start":
+      # Under adaptive/uniform sampling the RSI-teleported initial state
+      # always carries the reference's own velocity/pose for whatever frame
+      # got sampled, so every start except a literal frame 0 is "already
+      # moving correctly" -- a much easier problem than genuinely initiating
+      # the motion from true rest. Landing exactly on frame 0 by chance is
+      # so rare under bin-weighted sampling that the true cold-start
+      # transition barely gets practiced, even though it's the one scenario
+      # play/eval always tests (sampling_mode="start"). Force a fraction of
+      # resets to the true cold start so that transition keeps getting
+      # trained regardless of how the adaptive curriculum weights the rest.
+      force_cold = (
+        torch.rand(len(env_ids), device=self.device) < self.cfg.cold_start_ratio
+      )
+      self.time_steps[env_ids[force_cold]] = 0
 
     root_pos = self.body_pos_w[:, 0].clone()
     root_ori = self.body_quat_w[:, 0].clone()
@@ -363,10 +398,21 @@ class MotionCommand(CommandTerm):
     self.robot.clear_state(env_ids=env_ids)
 
   def _update_command(self):
-    self.time_steps += 1
+    if self.cfg.startup_contact_sensor:
+      sensor = self._env.scene[self.cfg.startup_contact_sensor]
+      force = torch.linalg.vector_norm(sensor.data.force, dim=-1)
+      contact = (force.reshape(self.num_envs, -1) > self.cfg.startup_contact_force).sum(dim=-1) >= 2
+      self._startup_contact |= contact
+      ready = self._startup_ready.clone()
+      self._startup_wait += self._startup_contact.long()
+      self.time_steps += ready.long()
+    else:
+      self.time_steps += 1
     env_ids = torch.where(self.time_steps >= self.motion.time_step_total)[0]
-    if env_ids.numel() > 0:
+    if env_ids.numel() > 0 and not self.cfg.hold_last_frame:
       self._resample_command(env_ids)
+    elif env_ids.numel() > 0:
+      self.time_steps[env_ids] = self.motion.time_step_total - 1
 
     anchor_pos_w_repeat = self.anchor_pos_w[:, None, :].repeat(
       1, len(self.cfg.body_names), 1
@@ -482,8 +528,13 @@ class MotionCommandCfg(CommandTermCfg):
   adaptive_kernel_size: int = 1
   adaptive_lambda: float = 0.8
   adaptive_uniform_ratio: float = 0.1
+  cold_start_ratio: float = 0.0
   adaptive_alpha: float = 0.001
   sampling_mode: Literal["adaptive", "uniform", "start"] = "adaptive"
+  startup_contact_sensor: str = ""
+  startup_contact_force: float = 5.0
+  startup_pause_s: float = 1.0
+  hold_last_frame: bool = False
 
   @dataclass
   class VizCfg:

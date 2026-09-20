@@ -1,4 +1,14 @@
 *.egg-info
+
+# Python/tool caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+
 .idea
 outputs
 logs

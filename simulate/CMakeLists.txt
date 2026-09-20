@@ -13,6 +13,14 @@ list(APPEND CMAKE_PREFIX_PATH "/opt/unitree_robotics/lib/cmake")
 find_package(unitree_sdk2 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS program_options)
 
+# unitree_sdk2 ships a matched libddsc/libddscxx pair.  A sourced ROS
+# installation can put a different CycloneDDS build first in LD_LIBRARY_PATH,
+# which mixes the two at runtime and trips an assertion in dds_write.  Record
+# the SDK library directory as DT_RPATH (rather than the lower-priority
+# DT_RUNPATH) so the pair used at link time is also used at runtime.
+get_target_property(UNITREE_DDS_LIBRARY ddsc IMPORTED_LOCATION)
+get_filename_component(UNITREE_SDK_LIBRARY_DIR "${UNITREE_DDS_LIBRARY}" DIRECTORY)
+
 
 include_directories(
   mujoco/include
@@ -44,3 +52,10 @@ link_libraries(
 add_executable(unitree_mujoco ${SIM_SRC} src/main.cc)
 
 add_executable(jstest src/joystick/jstest.cc src/joystick/joystick.cc)
+
+foreach(target unitree_mujoco jstest)
+  set_target_properties(${target} PROPERTIES
+    BUILD_RPATH "${UNITREE_SDK_LIBRARY_DIR}"
+  )
+  target_link_options(${target} PRIVATE "LINKER:--disable-new-dtags")
+endforeach()

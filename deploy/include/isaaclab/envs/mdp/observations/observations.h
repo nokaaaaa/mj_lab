@@ -122,6 +122,20 @@ REGISTER_OBSERVATION(velocity_commands)
     return obs;
 }
 
+REGISTER_OBSERVATION(stair_motion_command)
+{
+    const float forward_speed = params["forward_speed"].as<float>();
+    const float climb_duration = params["climb_duration"].as<float>();
+    const float elapsed = env->episode_length * env->step_dt;
+
+    std::vector<float> obs(3, 0.0f);
+    if (elapsed < climb_duration)
+    {
+        obs[0] = forward_speed;
+    }
+    return obs;
+}
+
 REGISTER_OBSERVATION(gait_phase)
 {
     float period = params["period"].as<float>();
@@ -147,6 +161,21 @@ REGISTER_OBSERVATION(gait_phase)
         obs[1] = 0.0f;
     }
 
+    return obs;
+}
+
+REGISTER_OBSERVATION(stair_gait_phase)
+{
+    const float period = params["period"].as<float>();
+    const float climb_duration = params["climb_duration"].as<float>();
+    const float elapsed = env->episode_length * env->step_dt;
+    const float phase = std::fmod(elapsed / period, 1.0f);
+    std::vector<float> obs(2, 0.0f);
+    if (elapsed < climb_duration)
+    {
+        obs[0] = std::sin(phase * 2 * M_PI);
+        obs[1] = std::cos(phase * 2 * M_PI);
+    }
     return obs;
 }
 

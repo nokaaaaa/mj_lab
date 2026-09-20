@@ -69,6 +69,35 @@ Available velocity tracking tasks:
 
 ### 2. Motion Imitation Training
 
+#### R1 three-step staircase at double speed
+
+The `Unitree-R1-Stairs-Tracking-2x` task tracks the R1 stair motion on a fixed
+three-step, 15 cm staircase. It waits for both feet to bear weight, holds the
+first motion pose for one second, then plays the motion at twice its original
+30 fps speed. Rewards include contact on the scheduled tread for each foot,
+upward and forward progress, and a stable start. The actor uses proprioception
+and the reference motion; the terrain is fixed and aligned to the spawn pose.
+
+The source CSV from `kimodo/outputs/r1_stairs/step_by_step` stores its root
+quaternion as `wxyz`. The converter expects `xyzw`, so the converted input is
+`src/assets/motions/r1/r1_stairs_step_by_step_xyzw.csv`. Rebuild the reference:
+
+```bash
+.venv/bin/python scripts/csv_to_npz.py --robot r1 \
+  --input-file src/assets/motions/r1/r1_stairs_step_by_step_xyzw.csv \
+  --output-name r1_stairs_step_by_step_2x.npz \
+  --input-fps 60 --output-fps 50 --device cuda:0
+```
+
+Train with:
+
+```bash
+.venv/bin/python scripts/train.py Unitree-R1-Stairs-Tracking-2x \
+  --motion-file src/assets/motions/r1/r1_stairs_step_by_step_2x.npz \
+  --env.scene.num-envs 512 --agent.max-iterations 3000 \
+  --agent.run-name step_by_step_2x --agent.logger tensorboard
+```
+
 Train a Unitree G1 to mimic reference motion sequences.
 
 <div style="margin-left: 20px;">
