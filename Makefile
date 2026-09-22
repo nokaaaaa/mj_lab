@@ -25,7 +25,12 @@ TENSORBOARD_LOGDIR ?= logs/rsl_rl
 SIM_BIN ?= ./simulate/build/unitree_mujoco
 SIM_ARGS ?=
 
-.PHONY: check tensor sim
+.PHONY: build check tensor sim
+
+# Configure and build the Unitree MuJoCo simulator.
+build:
+	cmake -S simulate -B simulate/build
+	cmake --build simulate/build -j$$(nproc)
 
 # Launch the already-built Unitree MuJoCo simulator from the repository root.
 sim:
