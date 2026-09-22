@@ -61,7 +61,7 @@ private:
 //
 // Mapping (held-down = pressed):
 //   1                  -> F1   (FixStand)
-//   3                  -> F2   (Velocity)
+//   2                  -> F2   (Velocity)
 //   4                  -> Y    (Mimic)
 //   0                  -> back (emergency stop)
 //   W/S                -> forward/backward
@@ -88,7 +88,7 @@ public:
         auto held = [](int key) { return g_key_pressed[key].load(std::memory_order_relaxed); };
 
         F1(held(GLFW_KEY_1) ? 1 : 0);
-        F2(held(GLFW_KEY_3) ? 1 : 0);
+        F2(held(GLFW_KEY_2) ? 1 : 0);
         back(held(GLFW_KEY_0) ? 1 : 0);
         start(held(GLFW_KEY_ENTER) ? 1 : 0);
         LB(held(GLFW_KEY_LEFT_CONTROL) ? 1 : 0);

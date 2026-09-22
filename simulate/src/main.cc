@@ -631,7 +631,7 @@ void user_key_cb(GLFWwindow* window, int key, int scancode, int act, int mods) {
     if(param::config.enable_elastic_band == 1) {
       if (key==GLFW_KEY_9) {
         elastic_band.enable_ = !elastic_band.enable_;
-      } else if (key==GLFW_KEY_2) {
+      } else if (key==GLFW_KEY_3) {
         elastic_band.enable_ = false; // release
       } else if (key==GLFW_KEY_7) {
         elastic_band.length_ -= 0.1;
