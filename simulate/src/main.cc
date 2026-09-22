@@ -623,12 +623,15 @@ __attribute__((used, visibility("default"))) extern "C" void _mj_rosettaError(co
 
 // user keyboard callback
 void user_key_cb(GLFWwindow* window, int key, int scancode, int act, int mods) {
+  if (key >= 0 && key <= GLFW_KEY_LAST) {
+    g_key_pressed[key].store(act != GLFW_RELEASE, std::memory_order_relaxed);
+  }
   if (act==GLFW_PRESS)
   {
     if(param::config.enable_elastic_band == 1) {
       if (key==GLFW_KEY_9) {
         elastic_band.enable_ = !elastic_band.enable_;
-      } else if (key==GLFW_KEY_E) {
+      } else if (key==GLFW_KEY_2 || key==GLFW_KEY_E) {
         elastic_band.enable_ = false; // release
       } else if (key==GLFW_KEY_7 || key==GLFW_KEY_UP) {
         elastic_band.length_ -= 0.1;

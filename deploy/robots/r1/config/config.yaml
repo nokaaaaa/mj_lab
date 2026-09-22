@@ -4,16 +4,16 @@ FSM:
       id: 1
     FixStand:
       id: 2
-    # Velocity: # 一時的に無効化（config/policy/velocity/v0/exported/policy.onnx が未配置のため）
-    #   id: 3
-    #   type: RLBase
+    Velocity:
+      id: 3
+      type: RLBase
 
     Mimic_Habayose:
       id: 5
       type: Mimic
   Passive:
     transitions:
-      FixStand: F1.on_pressed # キーボード操作時: F
+      FixStand: F1.on_pressed # キーボード操作時: 1
     mode: [
       1,1,1,1,1,1,
       1,1,1,1,1,1,
@@ -33,7 +33,8 @@ FSM:
   FixStand:
     transitions:
       Passive: back.on_pressed # キーボード操作時: S（緊急停止）
-      Mimic_Habayose: F2.on_pressed # キーボード操作時: M（本来はVelocity経由だが一時的に直結）
+      Velocity: F2.on_pressed # キーボード操作時: 3
+      Mimic_Habayose: Y.on_pressed # キーボード操作時: 4
     kp: [
       100, 100, 100, 150, 40, 40,
       100, 100, 100, 150, 40, 40,
@@ -61,19 +62,21 @@ FSM:
         0.35,-0.18,0,0.87,0,
       ]
     ]
-  # Velocity:
-  #   transitions:
-  #     Passive: LT + B.on_pressed
-  #     Mimic_Habayose: RB + A.on_pressed
-  #   policy_dir: config/policy/velocity/v0
+  Velocity:
+    transitions:
+      Passive: back.on_pressed # キーボード操作時: S（緊急停止）
+      FixStand: F1.on_pressed # キーボード操作時: 1
+      Mimic_Habayose: Y.on_pressed # キーボード操作時: 4
+    policy_dir: config/policy/velocity/v0
 
   Mimic_Habayose:
     transitions:
       Passive: back.on_pressed # キーボード操作時: S（緊急停止）
-      FixStand: F2.on_pressed # キーボード操作時: M（本来はVelocity経由だが一時的に直結）
+      FixStand: F1.on_pressed # キーボード操作時: 1
+      Velocity: F2.on_pressed # キーボード操作時: 3
 
     motion_file: config/policy/mimic/habayose_0014/params/habayose_0014.npz
-    policy_dir: config/policy/mimic/habayose_0014/
-    end_state: FixStand # 本来はVelocityだが一時的に無効化中のため
+    policy_dir: config/policy/mimic/habayose_0014_opt/
+    end_state: Velocity
     time_start: 0.0
     time_end: 500.0

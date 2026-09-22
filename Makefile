@@ -24,22 +24,42 @@ TENSORBOARD_LOGDIR ?= logs/rsl_rl
 # MuJoCo simulator executable and optional command-line arguments.
 SIM_BIN ?= ./simulate/build/unitree_mujoco
 SIM_ARGS ?=
+CTRL_BIN ?= ./simulate/build/r1_controller/r1_ctrl
+CTRL_ARGS ?= --network lo
 
 .PHONY: build check tensor sim
 
-# Configure and build the Unitree MuJoCo simulator.
+# Configure and build the simulator and its R1 policy controller.
 build:
 	cmake -S simulate -B simulate/build
 	cmake --build simulate/build -j$$(nproc)
+	cmake -S deploy/robots/r1 -B simulate/build/r1_controller
+	cmake --build simulate/build/r1_controller -j$$(nproc)
+	ln -sfn $(abspath deploy/robots/r1/config) simulate/build/r1_controller/config
+	ln -sfn $(abspath deploy/robots/r1/config/config.yaml) simulate/build/r1_controller/config.yaml
 
-# Launch the already-built Unitree MuJoCo simulator from the repository root.
+# Run the R1 policy controller alongside the simulator.
 sim:
 	@if [ ! -x "$(SIM_BIN)" ]; then \
 		echo "Simulator not found or not executable: $(SIM_BIN)" >&2; \
-		echo "Build it first with: cmake -S simulate -B simulate/build && cmake --build simulate/build -j$$(nproc)" >&2; \
+		echo "Build it first with: make build" >&2; \
 		exit 1; \
 	fi
-	@exec "$(SIM_BIN)" $(SIM_ARGS)
+	@if [ ! -x "$(CTRL_BIN)" ]; then \
+		echo "R1 controller not found or not executable: $(CTRL_BIN)" >&2; \
+		echo "Build it first with: make build" >&2; \
+		exit 1; \
+	fi
+	@ln -sfn $(abspath deploy/robots/r1/config) simulate/build/r1_controller/config
+	@ln -sfn $(abspath deploy/robots/r1/config/config.yaml) simulate/build/r1_controller/config.yaml
+	@"$(CTRL_BIN)" $(CTRL_ARGS) & ctrl_pid=$$!; \
+	trap 'kill $$ctrl_pid 2>/dev/null; wait $$ctrl_pid 2>/dev/null' EXIT INT TERM; \
+	sleep 1; \
+	if ! kill -0 $$ctrl_pid 2>/dev/null; then \
+		echo "R1 controller exited before the simulator started." >&2; \
+		exit 1; \
+	fi; \
+	"$(SIM_BIN)" $(SIM_ARGS)
 
 # Open a GUI file chooser (rooted at logs/rsl_rl) to pick a model_*.pt
 # checkpoint, then play it in the MuJoCo viewer, e.g.:
