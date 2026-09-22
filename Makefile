@@ -21,7 +21,20 @@ ZENITY := $(shell command -v zenity 2>/dev/null)
 TENSORBOARD_PORT ?= 6008
 TENSORBOARD_LOGDIR ?= logs/rsl_rl
 
-.PHONY: check tensor
+# MuJoCo simulator executable and optional command-line arguments.
+SIM_BIN ?= ./simulate/build/unitree_mujoco
+SIM_ARGS ?=
+
+.PHONY: check tensor sim
+
+# Launch the already-built Unitree MuJoCo simulator from the repository root.
+sim:
+	@if [ ! -x "$(SIM_BIN)" ]; then \
+		echo "Simulator not found or not executable: $(SIM_BIN)" >&2; \
+		echo "Build it first with: cmake -S simulate -B simulate/build && cmake --build simulate/build -j$$(nproc)" >&2; \
+		exit 1; \
+	fi
+	@exec "$(SIM_BIN)" $(SIM_ARGS)
 
 # Open a GUI file chooser (rooted at logs/rsl_rl) to pick a model_*.pt
 # checkpoint, then play it in the MuJoCo viewer, e.g.:
