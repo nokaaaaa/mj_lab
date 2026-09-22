@@ -63,9 +63,12 @@ private:
 //   1                  -> F1   (FixStand)
 //   3                  -> F2   (Velocity)
 //   4                  -> Y    (Mimic)
-//   S                  -> back (bind to a single-key "emergency stop" transition)
+//   0                  -> back (emergency stop)
+//   W/S                -> forward/backward
+//   A/D                -> left/right
+//   Q/E                -> turn left/right
 //   Arrow keys         -> D-pad (up/down/left/right)
-//   A / B / X / Y      -> A / B / X / Y
+//   B / X / Y          -> B / X / Y
 //   Left/Right Shift   -> LT / RT
 //   Left/Right Ctrl    -> LB / RB
 //   Enter              -> start
@@ -86,11 +89,11 @@ public:
 
         F1(held(GLFW_KEY_1) ? 1 : 0);
         F2(held(GLFW_KEY_3) ? 1 : 0);
-        back(held(GLFW_KEY_S) ? 1 : 0);
+        back(held(GLFW_KEY_0) ? 1 : 0);
         start(held(GLFW_KEY_ENTER) ? 1 : 0);
         LB(held(GLFW_KEY_LEFT_CONTROL) ? 1 : 0);
         RB(held(GLFW_KEY_RIGHT_CONTROL) ? 1 : 0);
-        A(held(GLFW_KEY_A) ? 1 : 0);
+        A(0);
         B(held(GLFW_KEY_B) ? 1 : 0);
         X(held(GLFW_KEY_X) ? 1 : 0);
         Y(held(GLFW_KEY_4) || held(GLFW_KEY_Y) ? 1 : 0);
@@ -100,9 +103,10 @@ public:
         right(held(GLFW_KEY_RIGHT) ? 1 : 0);
         LT(held(GLFW_KEY_LEFT_SHIFT) ? 1.0f : 0.0f);
         RT(held(GLFW_KEY_RIGHT_SHIFT) ? 1.0f : 0.0f);
-        lx(0.0f);
-        ly(0.0f);
-        rx(0.0f);
+        lx(0.5f * (held(GLFW_KEY_D) - held(GLFW_KEY_A)));
+        ly(held(GLFW_KEY_W) == held(GLFW_KEY_S) ? 0.0f
+           : (held(GLFW_KEY_W) ? 1.0f : -0.5f));
+        rx(static_cast<float>(held(GLFW_KEY_E) - held(GLFW_KEY_Q)));
         ry(0.0f);
     }
 private:

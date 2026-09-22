@@ -32,7 +32,7 @@ FSM:
     ]
   FixStand:
     transitions:
-      Passive: back.on_pressed # キーボード操作時: S（緊急停止）
+      Passive: back.on_pressed # キーボード操作時: 0（緊急停止）
       Velocity: F2.on_pressed # キーボード操作時: 3
       Mimic_Habayose: Y.on_pressed # キーボード操作時: 4
     kp: [
@@ -64,14 +64,14 @@ FSM:
     ]
   Velocity:
     transitions:
-      Passive: back.on_pressed # キーボード操作時: S（緊急停止）
+      Passive: back.on_pressed # キーボード操作時: 0（緊急停止）
       FixStand: F1.on_pressed # キーボード操作時: 1
       Mimic_Habayose: Y.on_pressed # キーボード操作時: 4
     policy_dir: config/policy/velocity/v0
 
   Mimic_Habayose:
     transitions:
-      Passive: back.on_pressed # キーボード操作時: S（緊急停止）
+      Passive: back.on_pressed # キーボード操作時: 0（緊急停止）
       FixStand: F1.on_pressed # キーボード操作時: 1
       Velocity: F2.on_pressed # キーボード操作時: 3
 
